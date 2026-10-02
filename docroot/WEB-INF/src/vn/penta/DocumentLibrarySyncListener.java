@@ -13,6 +13,7 @@ import com.liferay.portlet.documentlibrary.model.DLFileEntry;
 import com.liferay.portlet.documentlibrary.model.DLFolder;
 import com.liferay.portlet.documentlibrary.service.DLFolderLocalServiceUtil;
 import com.liferay.portlet.documentlibrary.service.DLFileEntryLocalServiceUtil;
+import com.liferay.portlet.trash.model.TrashEntry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -25,7 +26,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-/** Syncs new documents under configured source folders to a backup Liferay. */
+/** Syncs creates and deletes under configured source folders to a backup Liferay. */
 public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> {
 	private static final Log _log = LogFactoryUtil.getLog(DocumentLibrarySyncListener.class);
 
@@ -40,6 +41,92 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 				}
 				catch (Exception e) {
 					_log.error("Unable to sync document " + fileEntryId + " after upload committed.", e);
+				}
+				return null;
+			}
+		});
+	}
+
+	@Override
+	public void onAfterRemove(final DLFileEntry fileEntry) throws ModelListenerException {
+		scheduleBackupDelete(fileEntry);
+	}
+
+	@Override
+	public void onAfterUpdate(final DLFileEntry fileEntry) throws ModelListenerException {
+		if (fileEntry.isInTrash()) {
+			scheduleBackupDelete(fileEntry);
+		}
+	}
+
+	private void scheduleBackupDelete(final DLFileEntry fileEntry) {
+		final long fileEntryId = fileEntry.getFileEntryId();
+		final List<String> sourcePath;
+		final boolean selected;
+		try {
+			sourcePath = getFolderPath(fileEntry.getFolderId());
+			Properties syncProperties = getSyncProperties();
+			selected = !sourcePath.isEmpty() && isSelected(fileEntry.getFolderId(), sourcePath,
+				getFolderIdMappings(syncProperties), getFolderNames(syncProperties));
+		}
+		catch (Exception e) {
+			_log.error("Unable to determine backup folder for deleted document " + fileEntryId + ".", e);
+			return;
+		}
+		if (!selected) {
+			return;
+		}
+
+		final String fileName = isBlank(fileEntry.getName()) ? fileEntry.getTitle() : fileEntry.getName();
+		String resolvedTitle = fileEntry.getTitle();
+		if (fileEntry.isInTrash()) {
+			try {
+				TrashEntry trashEntry = fileEntry.getTrashEntry();
+				if (trashEntry != null) {
+					String originalTitle = trashEntry.getTypeSettingsProperty("title");
+					if (!isBlank(originalTitle)) {
+						resolvedTitle = originalTitle;
+					}
+				}
+			}
+			catch (Exception e) {
+				_log.warn("Unable to read original title from TrashEntry for document " + fileEntryId +
+					"; trying its current title.", e);
+			}
+		}
+		final String title = resolvedTitle;
+		TransactionCommitCallbackRegistryUtil.registerCallback(new Callable<Void>() {
+			@Override
+			public Void call() {
+				try {
+					Properties syncProperties = getSyncProperties();
+					String backupUrl = syncProperties.getProperty("document.library.sync.jsonws.url");
+					String userIdValue = syncProperties.getProperty("document.library.sync.userId");
+					String user = syncProperties.getProperty("document.library.sync.username");
+					String password = syncProperties.getProperty("document.library.sync.password");
+					String repositoryId = syncProperties.getProperty("document.library.sync.repository.id");
+					if (isBlank(backupUrl) || isBlank(userIdValue) || isBlank(user) || isBlank(password)) {
+						_log.error("Cannot delete backup document " + fileName + ": sync configuration is incomplete.");
+						return null;
+					}
+					long userId = GetterUtil.getLong(userIdValue);
+					if (userId <= 0) {
+						_log.error("document.library.sync.userId must be the numeric user ID on the backup Liferay.");
+						return null;
+					}
+					boolean deleted = LiferayDocumentUploader.deleteDocument(
+						userId, user, password, backupUrl, repositoryId, sourcePath, fileName, title);
+					if (deleted) {
+						_log.info("Deleted backup document '" + fileName + "' from folder path " + sourcePath + ".");
+					}
+					else {
+						_log.info("No matching backup document '" + fileName + "' (title '" + title +
+							"') exists in folder path " + sourcePath + ".");
+					}
+				}
+				catch (Exception e) {
+					_log.error("Unable to delete backup document '" + fileName + "' from folder path " +
+						sourcePath + ".", e);
 				}
 				return null;
 			}
@@ -64,7 +151,7 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 		if (isBlank(backupUrl) || isBlank(userIdValue) || isBlank(user) || isBlank(password)) {
 			_log.error("JSONWS sync configuration is incomplete. Set document.library.sync.jsonws.url, " +
 				"document.library.sync.userId, document.library.sync.username, and " +
-				"document.library.sync.password in the server-side document-library-sync.properties.");
+				"document.library.sync.password in the hook's document-library-sync.properties.");
 			return;
 		}
 		long userId = GetterUtil.getLong(userIdValue);
@@ -79,7 +166,7 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 			byte[] bytes = FileUtil.getBytes(input);
 			String receipt = LiferayDocumentUploader.uploadDocument(
 				userId, user, password, backupUrl, repositoryId, sourcePath, bytes,
-				fileEntry.getTitle(), fileEntry.getDescription());
+				fileEntry.getName(), fileEntry.getTitle(), fileEntry.getDescription());
 			if (receipt != null) {
 				_log.info("Synced document '" + fileEntry.getTitle() + "' to backup folder path " +
 					sourcePath + " (" + receipt + ")");
