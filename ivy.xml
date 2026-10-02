@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!DOCTYPE ivy-module [
+	<!ENTITY serviceLocator "com.liferay.portal.tools.servicebuilder.ServiceLocator">
+]>
+
+<ivy-module
+	version="2.0"
+	xmlns:m2="http://ant.apache.org/ivy/maven"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="http://ant.apache.org/ivy/schemas/ivy.xsd"
+>
+	<info organisation="com.liferay" module="document-library-sync-hook">
+		<license name="LGPL 2.1" url="http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt" />
+
+		<description homepage="http://www.liferay.com" />
+	</info>
+
+	<configurations>
+		<conf name="default" />
+		<conf name="internal" />
+		<conf name="provided" />
+		<conf name="runtime" />
+		<conf name="test" />
+	</configurations>
+</ivy-module>
