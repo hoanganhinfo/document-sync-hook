@@ -32,7 +32,25 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 
 	@Override
 	public void onAfterCreate(DLFileEntry fileEntry) throws ModelListenerException {
-		final long fileEntryId = fileEntry.getFileEntryId();
+		scheduleBackupSync(fileEntry.getFileEntryId(), "create");
+	}
+
+	@Override
+	public void onAfterRemove(final DLFileEntry fileEntry) throws ModelListenerException {
+		scheduleBackupDelete(fileEntry);
+	}
+
+	@Override
+	public void onAfterUpdate(final DLFileEntry fileEntry) throws ModelListenerException {
+		if (fileEntry.isInTrash()) {
+			scheduleBackupDelete(fileEntry);
+			return;
+		}
+
+		scheduleBackupSync(fileEntry.getFileEntryId(), "edit");
+	}
+
+	private void scheduleBackupSync(final long fileEntryId, final String event) {
 		final Properties syncProperties;
 		try {
 			syncProperties = getSyncProperties();
@@ -46,27 +64,16 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 			@Override
 			public Void call() {
 				try {
-					syncCreatedDocument(
+					syncDocument(
 						DLFileEntryLocalServiceUtil.getDLFileEntry(fileEntryId), syncProperties);
 				}
 				catch (Exception e) {
-					_log.error("Unable to sync document " + fileEntryId + " after upload committed.", e);
+					_log.error("Unable to sync document " + fileEntryId + " after " + event +
+						" committed.", e);
 				}
 				return null;
 			}
 		});
-	}
-
-	@Override
-	public void onAfterRemove(final DLFileEntry fileEntry) throws ModelListenerException {
-		scheduleBackupDelete(fileEntry);
-	}
-
-	@Override
-	public void onAfterUpdate(final DLFileEntry fileEntry) throws ModelListenerException {
-		if (fileEntry.isInTrash()) {
-			scheduleBackupDelete(fileEntry);
-		}
 	}
 
 	private void scheduleBackupDelete(final DLFileEntry fileEntry) {
@@ -143,7 +150,7 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 		});
 	}
 
-	private void syncCreatedDocument(DLFileEntry fileEntry, Properties syncProperties) throws Exception {
+	private void syncDocument(DLFileEntry fileEntry, Properties syncProperties) throws Exception {
 		Map<Long, String> selectedFolderIds = getFolderIdMappings(syncProperties);
 		Set<String> selectedFolderNames = getFolderNames(syncProperties);
 		List<String> sourcePath = getFolderPath(fileEntry.getFolderId());
