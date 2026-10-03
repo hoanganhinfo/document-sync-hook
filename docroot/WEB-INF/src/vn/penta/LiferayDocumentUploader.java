@@ -44,6 +44,12 @@ public class LiferayDocumentUploader {
 			return null;
 		}
 
+		long existingFileEntryId = findMatchingFileEntryId(
+			restTemplate, getRequest, baseUrl, repositoryId, parentFolderId, fileName, title);
+		if (existingFileEntryId > 0) {
+			deleteFileEntry(restTemplate, getRequest, baseUrl, existingFileEntryId);
+		}
+
 		String addUrl = baseUrl + "/api/jsonws/dlapp/add-file-entry";
 		HttpHeaders uploadHeaders = new HttpHeaders();
 		uploadHeaders.set("Authorization", headers.getFirst("Authorization"));
@@ -73,10 +79,9 @@ public class LiferayDocumentUploader {
 			verifyUrl, HttpMethod.GET, getRequest, String.class);
 		JsonObject verified = new JsonParser().parse(verifyResponse.getBody()).getAsJsonObject();
 		if (!verified.has("folderId") || verified.get("folderId").getAsLong() != parentFolderId ||
-			!verified.has("title") || !title.equals(verified.get("title").getAsString()) ||
-			!verified.has("name") || !fileName.equals(verified.get("name").getAsString())) {
+			!verified.has("title") || !title.equals(verified.get("title").getAsString())) {
 			throw new IllegalStateException("Backup Liferay returned FileEntry " + fileEntryId +
-				" but its folder/name/title did not match the upload request. Response: " +
+				" but its folder/title did not match the upload request. Response: " +
 				verifyResponse.getBody());
 		}
 		return "backup repository " + repositoryId + ", folderId " + parentFolderId +
@@ -105,21 +110,34 @@ public class LiferayDocumentUploader {
 				" does not exist in repository " + normalizedRepositoryId + ".");
 		}
 
-		long fileEntryId = findFileEntryIdByTitle(
-			restTemplate, request, baseUrl, normalizedRepositoryId, folderId, title);
-		if (fileEntryId <= 0 && (title == null || !title.equals(fileName))) {
-			// Older hook versions used the source title as both the file name and title.
-			fileEntryId = findFileEntryIdByTitle(
-				restTemplate, request, baseUrl, normalizedRepositoryId, folderId, fileName);
-		}
-		if (fileEntryId <= 0) {
-			fileEntryId = findFileEntryIdInFolder(
-				restTemplate, request, baseUrl, normalizedRepositoryId, folderId, title, fileName);
-		}
+		long fileEntryId = findMatchingFileEntryId(
+			restTemplate, request, baseUrl, normalizedRepositoryId, folderId, fileName, title);
 		if (fileEntryId <= 0) {
 			return false;
 		}
 
+		deleteFileEntry(restTemplate, request, baseUrl, fileEntryId);
+		return true;
+	}
+
+	private static long findMatchingFileEntryId(RestTemplate restTemplate,
+		HttpEntity<String> request, String baseUrl, String repositoryId,
+		long folderId, String fileName, String title) throws Exception {
+		long fileEntryId = findFileEntryIdByTitle(
+			restTemplate, request, baseUrl, repositoryId, folderId, title);
+		if (fileEntryId <= 0 && (title == null || !title.equals(fileName))) {
+			fileEntryId = findFileEntryIdByTitle(
+				restTemplate, request, baseUrl, repositoryId, folderId, fileName);
+		}
+		if (fileEntryId <= 0) {
+			fileEntryId = findFileEntryIdInFolder(
+				restTemplate, request, baseUrl, repositoryId, folderId, title, fileName);
+		}
+		return fileEntryId;
+	}
+
+	private static void deleteFileEntry(RestTemplate restTemplate,
+		HttpEntity<String> request, String baseUrl, long fileEntryId) throws Exception {
 		String deleteUrl = baseUrl + "/api/jsonws/dlapp/delete-file-entry/file-entry-id/" + fileEntryId;
 		ResponseEntity<String> deleteResponse = restTemplate.exchange(
 			deleteUrl, HttpMethod.POST, request, String.class);
@@ -130,7 +148,6 @@ public class LiferayDocumentUploader {
 				throw new IllegalStateException("JSONWS delete-file-entry failed: " + responseBody);
 			}
 		}
-		return true;
 	}
 
 	private static long findFileEntryIdByTitle(RestTemplate restTemplate,

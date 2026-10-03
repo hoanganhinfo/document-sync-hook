@@ -33,11 +33,21 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 	@Override
 	public void onAfterCreate(DLFileEntry fileEntry) throws ModelListenerException {
 		final long fileEntryId = fileEntry.getFileEntryId();
+		final Properties syncProperties;
+		try {
+			syncProperties = getSyncProperties();
+		}
+		catch (IOException e) {
+			_log.error("Unable to load sync configuration for document " + fileEntryId + ".", e);
+			return;
+		}
+
 		TransactionCommitCallbackRegistryUtil.registerCallback(new Callable<Void>() {
 			@Override
 			public Void call() {
 				try {
-					sync(DLFileEntryLocalServiceUtil.getDLFileEntry(fileEntryId));
+					syncCreatedDocument(
+						DLFileEntryLocalServiceUtil.getDLFileEntry(fileEntryId), syncProperties);
 				}
 				catch (Exception e) {
 					_log.error("Unable to sync document " + fileEntryId + " after upload committed.", e);
@@ -133,8 +143,7 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 		});
 	}
 
-	private void sync(DLFileEntry fileEntry) throws Exception {
-		Properties syncProperties = getSyncProperties();
+	private void syncCreatedDocument(DLFileEntry fileEntry, Properties syncProperties) throws Exception {
 		Map<Long, String> selectedFolderIds = getFolderIdMappings(syncProperties);
 		Set<String> selectedFolderNames = getFolderNames(syncProperties);
 		List<String> sourcePath = getFolderPath(fileEntry.getFolderId());
