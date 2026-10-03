@@ -63,9 +63,10 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 		final long fileEntryId = fileEntry.getFileEntryId();
 		final List<String> sourcePath;
 		final boolean selected;
+		final Properties syncProperties;
 		try {
 			sourcePath = getFolderPath(fileEntry.getFolderId());
-			Properties syncProperties = getSyncProperties();
+			syncProperties = getSyncProperties();
 			selected = !sourcePath.isEmpty() && isSelected(fileEntry.getFolderId(), sourcePath,
 				getFolderIdMappings(syncProperties), getFolderNames(syncProperties));
 		}
@@ -99,7 +100,6 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 			@Override
 			public Void call() {
 				try {
-					Properties syncProperties = getSyncProperties();
 					String backupUrl = syncProperties.getProperty("document.library.sync.jsonws.url");
 					String userIdValue = syncProperties.getProperty("document.library.sync.userId");
 					String user = syncProperties.getProperty("document.library.sync.username");

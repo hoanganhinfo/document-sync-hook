@@ -101,7 +101,8 @@ public class LiferayDocumentUploader {
 		long folderId = findDestinationFolder(
 			restTemplate, request, baseUrl, normalizedRepositoryId, sourceFolderPath);
 		if (folderId < 0) {
-			return false;
+			throw new IllegalStateException("Backup folder path " + sourceFolderPath +
+				" does not exist in repository " + normalizedRepositoryId + ".");
 		}
 
 		long fileEntryId = findFileEntryIdByTitle(
@@ -110,6 +111,10 @@ public class LiferayDocumentUploader {
 			// Older hook versions used the source title as both the file name and title.
 			fileEntryId = findFileEntryIdByTitle(
 				restTemplate, request, baseUrl, normalizedRepositoryId, folderId, fileName);
+		}
+		if (fileEntryId <= 0) {
+			fileEntryId = findFileEntryIdInFolder(
+				restTemplate, request, baseUrl, normalizedRepositoryId, folderId, title, fileName);
 		}
 		if (fileEntryId <= 0) {
 			return false;
@@ -155,6 +160,33 @@ public class LiferayDocumentUploader {
 				title + "' in folder " + folderId + ". Response: " + response.getBody());
 		}
 		return entry.get("fileEntryId").getAsLong();
+	}
+
+	private static long findFileEntryIdInFolder(RestTemplate restTemplate,
+		HttpEntity<String> request, String baseUrl, String repositoryId,
+		long folderId, String title, String name) throws Exception {
+		String lookupUrl = baseUrl + "/api/jsonws/dlapp/get-file-entries?repositoryId=" +
+			url(repositoryId) + "&folderId=" + folderId;
+		ResponseEntity<String> response = restTemplate.exchange(
+			lookupUrl, HttpMethod.GET, request, String.class);
+		JsonArray entries = new JsonParser().parse(response.getBody()).getAsJsonArray();
+		for (int i = 0; i < entries.size(); i++) {
+			JsonObject entry = entries.get(i).getAsJsonObject();
+			if (entry.has("folderId") && entry.get("folderId").getAsLong() == folderId &&
+				entry.has("title") && title != null && title.equals(entry.get("title").getAsString()) &&
+				entry.has("fileEntryId")) {
+				return entry.get("fileEntryId").getAsLong();
+			}
+		}
+		for (int i = 0; i < entries.size(); i++) {
+			JsonObject entry = entries.get(i).getAsJsonObject();
+			if (entry.has("folderId") && entry.get("folderId").getAsLong() == folderId &&
+				entry.has("name") && name != null && name.equals(entry.get("name").getAsString()) &&
+				entry.has("fileEntryId")) {
+				return entry.get("fileEntryId").getAsLong();
+			}
+		}
+		return -1;
 	}
 
 	private static long findDestinationFolder(RestTemplate restTemplate,
