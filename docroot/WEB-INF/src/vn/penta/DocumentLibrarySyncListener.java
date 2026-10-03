@@ -46,8 +46,16 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 			scheduleBackupDelete(fileEntry);
 			return;
 		}
+		if (isViewCounterUpdate()) {
+			return;
+		}
 
 		scheduleBackupSync(fileEntry.getFileEntryId(), "edit");
+	}
+
+	private boolean isViewCounterUpdate() {
+		return Thread.currentThread().getName().contains(
+			"DLFileEntryLocalService.incrementViewCounter");
 	}
 
 	private void scheduleBackupSync(final long fileEntryId, final String event) {
@@ -178,7 +186,8 @@ public class DocumentLibrarySyncListener extends BaseModelListener<DLFileEntry> 
 
 		InputStream input = null;
 		try {
-			input = fileEntry.getContentStream();
+			input = DLFileEntryLocalServiceUtil.getFileAsStream(
+				fileEntry.getUserId(), fileEntry.getFileEntryId(), fileEntry.getVersion(), false);
 			byte[] bytes = FileUtil.getBytes(input);
 			String receipt = LiferayDocumentUploader.uploadDocument(
 				userId, user, password, backupUrl, repositoryId, sourcePath, bytes,
